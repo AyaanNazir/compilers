@@ -1,0 +1,93 @@
+From rauta@tacc.utexas.edu  Mon Nov  7 12:31:20 2016
+CC: Lars Koesterke <lars@tacc.utexas.edu>
+
+Subject: Request for help in reaching out to the students in the CS 375 class
+
+
+Our group at the Texas Advanced Computing Center (www.tacc.utexas.edu<http:=
+//www.tacc.utexas.edu>) is working on an "Interactive Parallelization Tool"=
+, and we are looking to hire undergraduate/graduate students. I feel that t=
+he students in your CS 375 class would be equipped with some of the skills =
+that we need for this project.
+
+Pasted below is the description of the currently open student-positions, an=
+d a short overview of the project. Would it be possible to share it with th=
+e students in your CS 375 course?
+
+Thanks & Regards,
+Ritu
+
+Ritu Arora, Ph.D.
+High Performance Computing
+Texas Advanced Computing Center
+Email: rauta@tacc.utexas.edu
+Phone: 512-232-9277
+
+
+***************************************************************************=
+**
+
+Job Title: URA, GRA
+Hours per week: 20 hrs
+Employment Start Date: January 1, 2017
+Employment End Date: September 30, 2018
+
+We are looking to hire one URA and one GRA for an NSF funded project that s=
+tarted on November 1, 2016. Preference will be given to students who can co=
+mmit to 20 hours per week of work during regular semesters, and 40 hours pe=
+r week of work during summers. Interested students should email their resum=
+e to "rauta@tacc.utexas.edu" with the following subject line: "URA/GRA posi=
+tion - IPT project". Students wishing to start earlier than January 1, 2017=
+ are encouraged to apply (by submitting their resume).
+
+Required Qualifications and Skills:
+
+  *   Currently enrolled undergraduate or graduate student at The Universit=
+y of Texas at Austin
+  *   Minimum of a 3.0 GPA
+  *   Majoring in Computer Science, Engineering, Mathematics, or a related =
+area
+  *   Proficient in C/C++ and/or Fortran, working knowledge of Java, enthus=
+iasm to learn and use a source-to-source compiler (ROSE compiler), familiar=
+ity with the Linux Operating System
+  *   High degree of personal responsibility
+  *   Good communication and presentation skill
+  *   Ability to work independently under established deadlines and as part=
+ of a team
+
+Preferred skills for the project:
+Knowledge of compiler design, design patterns, and parallel programming (MP=
+I/OpenMP/CUDA)
+
+Description of the project:
+An Interactive Parallelization Tool (IPT) is being developed in this resear=
+ch project. The tool is designed to support the parallelization of serial a=
+pplications written in C/C++ and Fortran. The parallel programming paradigm=
+s that will be supported by the tool are MPI, OpenMP, CUDA, and MPI+X.
+
+Description of the duties:
+
+The URA/GRA will assist in the following activities related to the aforemen=
+tioned project:
+
+  *   Analyzing serial and parallel implementations of the selected test-ca=
+ses to develop high-level abstractions
+  *   Implementing code templates in C/C++/Fortran as needed in the project
+  *   Developing code transformation rules using the ROSE source-to-source =
+compiler
+  *   Writing bash scripts for automating the workflow in the tool
+  *   Refactoring and enhancing the existing code base
+  *   Testing the tool
+  *   Developing the command-line and graphical user interfaces of the tool
+
+Through this project, the URA/GRA will gain valuable skills in developing a=
+bstractions and hence high-level tools that can be of immense help to domai=
+n-experts. Students will learn about high performance computing and will ge=
+t to work on one of the top supercomputers in the world.
+
+If you have any questions, please feel free to write to Ritu Arora at rauta=
+@tacc.utexas.edu<mailto:rauta@tacc.utexas.edu>.
+
+For more information about TACC please visit us here: www.tacc.utexas.edu<h=
+ttp://www.tacc.utexas.edu/>
+
