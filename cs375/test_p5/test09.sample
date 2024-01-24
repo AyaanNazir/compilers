@@ -1,0 +1,58 @@
+binop -- bad types: op 94295460835632  lhs 94295460835568  rhs 94295460835696
+ token 94295460835632  typ  0  whic   5  dty   0  sty 0 lnk 0  opnds 0
+ token 94295460835568  typ  0  whic  25  dty   0  sty 94295460827120 lnk 0  opnds 94295460835440
+ token 94295460835696  typ  3  whic  99  dty   0  sty 94295460827120 lnk 0  opnds 0
+yyparse result =        0
+Symbol table level 1
+ 94295460827216     complex  TYPE   typ 94295460827120  lvl  1  siz    16  off     0
+(RECORD (re real)
+        (im real))
+ 94295460828016         red  CONST  typ INTEGER  val  0
+ 94295460828112       white  CONST  typ INTEGER  val  1
+ 94295460828208        blue  CONST  typ INTEGER  val  2
+ 94295460828400       color  TYPE   typ 94295460828304  lvl  1  siz     4  off     0
+  0 ..   2
+ 94295460828816      person  TYPE   typ 94295460831120  lvl  1  siz    48  off     0
+(RECORD (age integer)
+        (friend (^ person))
+        (location (RECORD (re real)
+                          (im real)))
+        (favorite   0 ..   2)
+        (salary real))
+ 94295460829008          pp  TYPE   typ 94295460828912  lvl  1  siz     8  off     0
+(^ person)
+ 94295460831600           c  VAR    0 typ 94295460827120  lvl  1  siz    16  off     0
+(RECORD (re real)
+        (im real))
+ 94295460831952         sum  VAR    0 typ integer  lvl  1  siz     4  off    16
+ 94295460832688        john  VAR    4 typ 94295460828912  lvl  1  siz     8  off    24
+(^ person)
+ 94295460832784        mary  VAR    4 typ 94295460828912  lvl  1  siz     8  off    32
+(^ person)
+ 94295460832880        fred  VAR    4 typ 94295460828912  lvl  1  siz     8  off    40
+(^ person)
+ 94295460832976         ptr  VAR    4 typ 94295460828912  lvl  1  siz     8  off    48
+(^ person)
+(program graph1 (progn output)
+                (progn (:= (aref (^ john)
+                                 32)
+                           2)
+                       (:= (aref (^ john)
+                                 0)
+                           19)
+                       (:= (aref (^ john)
+                                 8)
+                           mary)
+                       (:= (aref (^ john)
+                                 40)
+                           4.000000e+04)
+                       (:= (aref (^ fred)
+                                 8)
+                           0)
+                       (:= (aref (^ mary)
+                                 16)
+                           c)
+                       (:= sum (+ sum (aref (^ ptr)
+                                            0)))
+                       (:= ptr (aref (^ ptr)
+                                     8))))
