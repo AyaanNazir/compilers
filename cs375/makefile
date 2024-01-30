@@ -13,7 +13,14 @@ lex1:   lexandr.o lex1.o scanner.o printtoken.o token.h lexan.h
 
 # To compile your file lexanc.c --> lexanc
 # 
-lexanc:  lexandr.o lexanc.o scanner.o printtoken.o token.h lexan.h
+
+debug: 
+	cc -g -c -o lexanc.o lexanc.c
+	cc -o lexanc lexandr.o lexanc.o scanner.o printtoken.o -lm
+	gdb ./lexanc
+
+lexanc:  
+	lexandr.o lexanc.o scanner.o printtoken.o token.h lexan.h
 	cc -o lexanc lexandr.o lexanc.o scanner.o printtoken.o -lm
 
 # To compile your file lexan.l --> lexer
