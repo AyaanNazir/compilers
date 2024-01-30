@@ -41,6 +41,7 @@ static char *resprnt[] = { " ", "array", "begin", "case", "const", "do",
                            "of", "packed", "procedure", "program", "record",
                            "repeat", "set", "then", "to", "type",
 		           "until", "var", "while", "with" };
+// for multi-character specials
 static char *twospc[] = {":=", "<>", "<=", ">=", ".."};
 static char *lookup[] = {"05", "07", "09", "010", "18"};
 
@@ -58,11 +59,13 @@ void skipblanks ()
     while ((c = peekchar()) != EOF) {
       if ((c == ' ' || c == '\n' || c == '\t')) {
         getchar();
+        // skips opening comments
       } else if (c == '{' || (c == '(' && (peek2char()) == '*')) {
         if (c == '(') {
           getchar();
         } 
         getchar(); 
+        // skips closing comments
         while (((c = peekchar()) != EOF) && (c != '}') && (c != '*' || (peek2char()) != ')')) {
           getchar();
         }
@@ -84,9 +87,11 @@ TOKEN identifier (TOKEN tok)
     int c;
     int count = 0;
     char s[15];
+    // concatanates string
     while ((c = peekchar()) != EOF && (CHARCLASS[c] == ALPHA || CHARCLASS[c] == NUMERIC)) {
       if (count < 15) {
         s[count] = c;
+        // caps word at 16 characters
       } else if (count == 15) {
         s[count] = '\0';
       }
@@ -96,6 +101,7 @@ TOKEN identifier (TOKEN tok)
     if (count < 15) {
       s[count] = '\0';
     }
+    // checks all resprnt
     for (int i = 0; i < sizeof(resprnt) / sizeof(resprnt[i]); i++) {
       if (!strcmp(s, resprnt[i])) {
         tok->whichval = i;
@@ -103,6 +109,7 @@ TOKEN identifier (TOKEN tok)
         return tok;
       }
     }
+    // checks all opprnt
     for (int i = 0; i < sizeof(opprnt) / sizeof(opprnt[i]); i++) {
       if (!strcmp(s, opprnt[i])) {
         tok->whichval = i;
@@ -120,13 +127,17 @@ TOKEN getstring (TOKEN tok)
     int c;
     int count = 0;
     char s[15];
+    // gets rid of apostraphe
     getchar();
+    // goes through string until apostraphe is found
     while ((c = peekchar()) != EOF && c != '\n' && !(c == '\'' && peek2char() != '\'')) {
+      // puts apostraphe if in word
       if (c == '\'' && peek2char() == '\'') {
         getchar();
       }
       if (count < 15) {
         s[count] = c;
+        // caps word at 16 characters
       } else if (count == 15) {
         s[count] = '\0';
       }
@@ -136,6 +147,7 @@ TOKEN getstring (TOKEN tok)
     if (count <= 15) {
       s[count] = '\0';
     }
+    // gets rid of apostraphe
     getchar();
     tok->tokentype = STRINGTOK;
     strcpy(tok->stringval, s);
@@ -147,12 +159,15 @@ TOKEN special (TOKEN tok)
     int c;
     char s[2];
     s[0] = getchar();
+    // checks if there is a second character
     if ((c = peekchar()) != EOF && CHARCLASS[c] == SPECIAL) {
       s[1] = c;
+      // checks if the combination of the two characters is special
       for (int i = 0; i < sizeof(twospc) / sizeof(twospc[i]); i++) {
         if (!strcmp(s, twospc[i])) {
           getchar();
           int type = 0;
+          // uses lookup table to find the type and val
           for (int j = 1; j < strlen(lookup[i]); j++) {
             int charval = (lookup[i][j] - '0');
             type = type * 10 + charval;
@@ -163,7 +178,9 @@ TOKEN special (TOKEN tok)
         }
       }
     }
+    // goes back to 1 character if not 2 characters is not found
     s[1] = '\0';
+    // checks all opprnt
     for (int i = 0; i < sizeof(opprnt) / sizeof(opprnt[i]); i++) {
       if (!strcmp(s, opprnt[i])) {
         tok->whichval = i;
@@ -171,6 +188,7 @@ TOKEN special (TOKEN tok)
         return tok;
       }
     }
+    // checks all delprnt
     for (int i = 0; i < sizeof(delprnt) / sizeof(delprnt[i]); i++) {
       if (!strcmp(s, delprnt[i])) {
         tok->whichval = i;
@@ -194,11 +212,12 @@ TOKEN number (TOKEN tok)
     int exp = 0;
     int err = 0;
     int zeros = 0;
-    
+    // finds all numbers before e or .
     while ( (c = peekchar()) != EOF && CHARCLASS[c] == NUMERIC) {   
       c = getchar();
       charval = (c - '0');
       num = num * 10 + charval;
+      //caps number but stores e
       if (num > 2147483647) {
         exp++;
         tok->tokentype = NUMBERTOK;
@@ -209,14 +228,17 @@ TOKEN number (TOKEN tok)
         count++;
       }
     }
+    // finds all numbers after .
     if (c == '.' && CHARCLASS[peek2char()] == NUMERIC) {
       place = 1;
       special = getchar();
+      // accounts for leading 0s
       while ( (c = peekchar()) != EOF && c == '0' && peek2char() != 'e') {
         getchar();
         zeros++;
         place++;
       }
+      // adds decimals
       while ( (c = peekchar()) != EOF && CHARCLASS[c] == NUMERIC) {
         c = getchar();
         charval = (c - '0');
@@ -229,9 +251,11 @@ TOKEN number (TOKEN tok)
       }
       place = 0;
     }
+    // finds all numbers after e
     if (c == 'e') {
       special = special == '.' ? 1 : 'e';
       getchar();
+      // accounts for negative power
       if (peekchar() == '-' || peekchar() == '+') {
         if (peekchar() == '-') {
           negative = 1;
@@ -239,6 +263,7 @@ TOKEN number (TOKEN tok)
         }
         getchar();
       }
+      // adds power
       while ( (c = peekchar()) != EOF && CHARCLASS[c] == NUMERIC) {
         c = getchar();
         charval = (c - '0');
@@ -246,8 +271,10 @@ TOKEN number (TOKEN tok)
       }
       place += exp;
     }
+    // checks if there is a ., e, both, or neither
     if (special == '.') {
       flt += num;
+      // floats can use exponents, so the numbers that were truncated as integers are back
       for (int i = 0; i < exp; i++) {
         flt *= 10;
       }
@@ -257,6 +284,7 @@ TOKEN number (TOKEN tok)
       return tok;
     } else if (special == 'e') {
       flt = num;
+      // uses negative to decide if float needs to be multiplied or divided
       if (negative) {
         for (int i = 0; i < place; i++) {
           flt /= 10;
@@ -266,6 +294,7 @@ TOKEN number (TOKEN tok)
           flt *= 10;
         }
       }
+      // checks for overflow
       if (place < -38 || place > 38) {
         tok->tokentype = NUMBERTOK;
         tok->basicdt = REAL;
@@ -279,14 +308,17 @@ TOKEN number (TOKEN tok)
       return tok;
     } else if (special) {
       flt += num;
+      // multiplies accoring to leading zeroes
       for (int i = 0; i < zeros; i++) {
         flt *= 10;
         place--;
       }
+      // divides according to decimal placement
       for (int i = 0; i < count; i++) {
         flt /= 10;
         place--;
       }
+      // checks for overflow
       if (place < -38 || place > 38) {
         tok->tokentype = NUMBERTOK;
         tok->basicdt = REAL;
@@ -294,6 +326,7 @@ TOKEN number (TOKEN tok)
         printf("Floating number out of range\n");
         return tok;
       }
+      // uses negative to decide if float needs to be multiplied or divided
       if (negative) {
         for (int i = 0; i < place; i++) {
           flt /= 10;
@@ -307,6 +340,7 @@ TOKEN number (TOKEN tok)
       tok->basicdt = REAL;
       tok->realval = flt;
       return tok;
+      // checks for integer overflow
     } else if (err) {
       printf("Integer number out of range\n");
       return tok;
