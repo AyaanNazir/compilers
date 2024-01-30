@@ -41,6 +41,8 @@ static char *resprnt[] = { " ", "array", "begin", "case", "const", "do",
                            "of", "packed", "procedure", "program", "record",
                            "repeat", "set", "then", "to", "type",
 		           "until", "var", "while", "with" };
+static char *twospc[] = {":=", "<>", "<=", ">=", ".."};
+static char *lookup[] = {"05", "07", "09", "010", "18"};
 
 /* This file will work as given with an input file consisting only
    of integers separated by blanks:
@@ -82,7 +84,7 @@ TOKEN identifier (TOKEN tok)
     int c;
     int count = 0;
     char s[15];
-    while ((c = peekchar()) != EOF && CHARCLASS[c] == ALPHA) {
+    while ((c = peekchar()) != EOF && (CHARCLASS[c] == ALPHA || CHARCLASS[c] == NUMERIC)) {
       if (count < 15) {
         s[count] = c;
       } else if (count == 15) {
@@ -94,17 +96,17 @@ TOKEN identifier (TOKEN tok)
     if (count < 15) {
       s[count] = '\0';
     }
-    for (int i = 0; i < sizeof(opprnt) / sizeof(opprnt[i]); i++) {
-      if (!strcmp(s, opprnt[i])) {
-        tok->whichval = i;
-        tok->tokentype = OPERATOR;
-        return tok;
-      }
-    }
     for (int i = 0; i < sizeof(resprnt) / sizeof(resprnt[i]); i++) {
       if (!strcmp(s, resprnt[i])) {
         tok->whichval = i;
         tok->tokentype = RESERVED;
+        return tok;
+      }
+    }
+    for (int i = 0; i < sizeof(opprnt) / sizeof(opprnt[i]); i++) {
+      if (!strcmp(s, opprnt[i])) {
+        tok->whichval = i;
+        tok->tokentype = OPERATOR;
         return tok;
       }
     }
@@ -119,7 +121,7 @@ TOKEN getstring (TOKEN tok)
     int count = 0;
     char s[15];
     getchar();
-    while ((c = peekchar()) != EOF && c != '\n') {
+    while ((c = peekchar()) != EOF && c != '\n' && !(c == '\'' && peek2char() != '\'')) {
       if (c == '\'' && peek2char() == '\'') {
         getchar();
       }
@@ -132,8 +134,9 @@ TOKEN getstring (TOKEN tok)
       count++;
     }
     if (count <= 15) {
-      s[count-1] = '\0';
+      s[count] = '\0';
     }
+    getchar();
     tok->tokentype = STRINGTOK;
     strcpy(tok->stringval, s);
     return tok;
@@ -142,13 +145,25 @@ TOKEN getstring (TOKEN tok)
 TOKEN special (TOKEN tok)
   {
     int c;
-    int count = 0;
     char s[2];
-    while ((c = peekchar()) != EOF && CHARCLASS[c] == SPECIAL) {
-      s[count] = getchar();
-      count++;
+    s[0] = getchar();
+    if ((c = peekchar()) != EOF && CHARCLASS[c] == SPECIAL) {
+      s[1] = c;
+      for (int i = 0; i < sizeof(twospc) / sizeof(twospc[i]); i++) {
+        if (!strcmp(s, twospc[i])) {
+          getchar();
+          int type = 0;
+          for (int j = 1; j < strlen(lookup[i]); j++) {
+            int charval = (lookup[i][j] - '0');
+            type = type * 10 + charval;
+          }
+          tok->whichval = type;
+          tok->tokentype = lookup[i][0] - '0';
+          return tok;
+        }
+      }
     }
-    s[count] = '\0';
+    s[1] = '\0';
     for (int i = 0; i < sizeof(opprnt) / sizeof(opprnt[i]); i++) {
       if (!strcmp(s, opprnt[i])) {
         tok->whichval = i;
@@ -178,6 +193,7 @@ TOKEN number (TOKEN tok)
     int count = -1;
     int exp = 0;
     int err = 0;
+    int zeros = 0;
     
     while ( (c = peekchar()) != EOF && CHARCLASS[c] == NUMERIC) {   
       c = getchar();
@@ -196,6 +212,11 @@ TOKEN number (TOKEN tok)
     if (c == '.' && CHARCLASS[peek2char()] == NUMERIC) {
       place = 1;
       special = getchar();
+      while ( (c = peekchar()) != EOF && c == '0' && peek2char() != 'e') {
+        getchar();
+        zeros++;
+        place++;
+      }
       while ( (c = peekchar()) != EOF && CHARCLASS[c] == NUMERIC) {
         c = getchar();
         charval = (c - '0');
@@ -227,6 +248,9 @@ TOKEN number (TOKEN tok)
     }
     if (special == '.') {
       flt += num;
+      for (int i = 0; i < exp; i++) {
+        flt *= 10;
+      }
       tok->tokentype = NUMBERTOK;
       tok->basicdt = REAL;
       tok->realval = flt;
@@ -255,6 +279,10 @@ TOKEN number (TOKEN tok)
       return tok;
     } else if (special) {
       flt += num;
+      for (int i = 0; i < zeros; i++) {
+        flt *= 10;
+        place--;
+      }
       for (int i = 0; i < count; i++) {
         flt /= 10;
         place--;
