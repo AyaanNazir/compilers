@@ -15,8 +15,8 @@ lex1:   lexandr.o lex1.o scanner.o printtoken.o token.h lexan.h
 # 
 
 debug: 
-	cc -g -c -o lexanc.o lexanc.c
-	cc -o lexanc lexandr.o lexanc.o scanner.o printtoken.o -lm
+	cc -g -c -o lexan.o lexan.l
+	cc -o lexer lex.yy.o lexanl.o printtoken.o
 	gdb ./lexanc
 
 lexanc:  
@@ -35,7 +35,7 @@ lex2:   lex2.yy.o lexanl.o printtoken.o token.h lexan.h
 
 # To compile starter file lexasu.l --> lexasu
 # 
-lexasu:   lexasu.o
+lexasu:   lexasu.o 
 	cc -o lexasu lexasu.o -ll
 
 # To compile starter file pars1.c --> pars1c
