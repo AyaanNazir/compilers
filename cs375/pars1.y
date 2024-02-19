@@ -83,12 +83,26 @@ TOKEN parseresult;
 
 %%
 
-program    :  statement DOT  /* change this! */       { parseresult = $1; }
+program    :  PROGRAM variable LPAREN params RPAREN SEMICOLON progdesc DOT { parseresult = makeprog($2, $4, $7); }
+             ;
+  params     :  variable { $$ = cons($1); }
+             |  variable COMMA params { $$ = cons($1, $3); } // recursive
+             ;
+  progdesc   :  VAR varlist statement
+             ;
+  varlist    :  variable COLON vartype { $$ = cons($1); }
+             |  variable COMMA varlist { $$ = cons($1, $3); } // recursive
+             ;
+  vartype    :  variable { $$ = deftype($1); }
              ;
   statement  :  BEGINBEGIN statement endpart
                                        { $$ = makeprogn($1,cons($2, $3)); }
              |  IF expr THEN statement endif   { $$ = makeif($1, $2, $4, $5); }
              |  assignment
+             |  FOR assignment TO variable DO statement { $$ = makefor($2, $4, $6); } // INCOMPLETE
+             |  syscall
+             ;
+  syscall    :  variable LPAREN params RPAREN  { $$ = syscall($1, $3); }
              ;
   endpart    :  SEMICOLON statement endpart    { $$ = cons($2, $3); }
              |  END                            { $$ = NULL; }
@@ -128,6 +142,10 @@ program    :  statement DOT  /* change this! */       { parseresult = $1; }
 #define DB_MAKEIF     4             /* bit to trace makeif */
 #define DB_MAKEPROGN  8             /* bit to trace makeprogn */
 #define DB_PARSERES  16             /* bit to trace parseresult */
+#define DB_MAKEPROG  32             /* bit to trace makeprog */
+#define DB_DEFTYPE   64             /* bit to trace deftype */
+#define DB_SYSCALL  128             /* bit to trace syscall */
+#define DB_MAKEFOR  256             /* bit to trace makefor */
 
  int labelnumber = 0;  /* sequential counter for internal label numbers */
 
@@ -183,6 +201,70 @@ TOKEN makeprogn(TOKEN tok, TOKEN statements)
          dbugprinttok(tok);
          dbugprinttok(statements);
        };
+     return tok;
+   }
+
+TOKEN makeprog(TOKEN variable, TOKEN params, TOKEN progdesc)
+  {  
+     TOKEN arguments = talloc();
+     arguments->tokentype = OPERATOR;
+     arguments->whichval = PROGNOP;
+     arguments->operands = params;
+     arguments->link = progdesc;
+     variable->link = arguments;
+     TOKEN tok = talloc();
+     tok->tokentype = OPERATOR;
+     tok->whichval = PROGNOP;
+     tok->operands = variable;
+     if (DEBUG & DB_MAKEPROG)
+       { printf("makeprog\n");
+         dbugprinttok(arguments);
+         dbugprinttok(tok);
+         dbugprinttok(variable);
+         dbugprinttok(params);
+         dbugprinttok(progdesc);
+       };
+     return tok;
+   }
+
+// Uses symbol table class to find variable type
+TOKEN deftype(TOKEN variable)
+  {  
+     variable->symtype = searchst(variable->stringval);
+     if (DEBUG & DB_DEFTYPE)
+       { printf("makeprog\n");
+         dbugprinttok(variable);
+       };
+     return variable;
+   }
+
+TOKEN syscall(TOKEN variable, TOKEN params)
+  {  
+     variable->link = params;
+     TOKEN tok = talloc();
+     tok->tokentype = OPERATOR;
+     tok->whichval = FUNCALLOP;
+     tok->operands = variable;
+     if (DEBUG & DB_SYSCALL)
+       { printf("makeprog\n");
+         dbugprinttok(variable);
+         dbugprinttok(params);
+         dbugprinttok(tok);
+       };
+   }
+
+TOKEN makefor(TOKEN assignment, TOKEN variable, TOKEN statement)
+  {  
+     TOKEN tok = makeprogn(talloc(), assignment);
+     TOKEN lab = talloc();
+     lab->tokentype = OPERATOR;
+     lab->whichval = LABELOP;
+     lab->tokenval = labelnumber;
+     assignment->link = lab;
+     labelnumber++;
+     TOKEN condition = talloc();
+     condition = makeif(if, variable, statement, NULL);
+     
      return tok;
    }
 
