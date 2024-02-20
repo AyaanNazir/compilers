@@ -2176,6 +2176,7 @@ void yyfree (void * ptr )
 #line 140 "lexan.l"
 
 
+// for integers
 int install_rnum() {
    int rnum;
    yylval = talloc();

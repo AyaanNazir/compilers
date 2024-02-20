@@ -83,26 +83,26 @@ TOKEN parseresult;
 
 %%
 
-program    :  PROGRAM variable LPAREN params RPAREN SEMICOLON progdesc DOT { parseresult = makeprog($2, $4, $7); }
+program    :  PROGRAM variable LPAREN params RPAREN SEMICOLON progdesc DOT { parseresult = makeprogram($2, $4, $7); }
              ;
-  params     :  variable { $$ = cons($1); }
+  params     :  variable { $$ = cons($1, NULL); }
              |  variable COMMA params { $$ = cons($1, $3); } // recursive
              ;
   progdesc   :  VAR varlist statement
              ;
-  varlist    :  variable COLON vartype { $$ = cons($1); }
+  varlist    :  variable COLON vartype { $$ = cons($1, NULL); }
              |  variable COMMA varlist { $$ = cons($1, $3); } // recursive
              ;
-  vartype    :  variable { $$ = deftype($1); }
+  vartype    :  variable { $$ = findtype($1); }
              ;
   statement  :  BEGINBEGIN statement endpart
                                        { $$ = makeprogn($1,cons($2, $3)); }
              |  IF expr THEN statement endif   { $$ = makeif($1, $2, $4, $5); }
              |  assignment
-             |  FOR assignment TO variable DO statement { $$ = makefor($2, $4, $6); } // INCOMPLETE
+             |  FOR assignment TO factor DO statement { $$ = makefor(1, $1, $2, $3, $4, $5, $6); }
              |  syscall
              ;
-  syscall    :  variable LPAREN params RPAREN  { $$ = syscall($1, $3); }
+  syscall    :  variable LPAREN params RPAREN  { $$ = makefuncall($2, $1, $3); }
              ;
   endpart    :  SEMICOLON statement endpart    { $$ = cons($2, $3); }
              |  END                            { $$ = NULL; }
@@ -121,6 +121,7 @@ program    :  PROGRAM variable LPAREN params RPAREN SEMICOLON progdesc DOT { par
   factor     :  LPAREN expr RPAREN             { $$ = $2; }
              |  variable
              |  NUMBER
+             |  STRING
              ;
   variable   : IDENTIFIER
              ;
@@ -136,16 +137,17 @@ program    :  PROGRAM variable LPAREN params RPAREN SEMICOLON progdesc DOT { par
    To turn on all flags, set DEBUG to the next power of 2, minus 1.
   */
 
-#define DEBUG        31             /* set bits here for debugging, 0 = off  */
-#define DB_CONS       1             /* bit to trace cons */
-#define DB_BINOP      2             /* bit to trace binop */
-#define DB_MAKEIF     4             /* bit to trace makeif */
-#define DB_MAKEPROGN  8             /* bit to trace makeprogn */
-#define DB_PARSERES  16             /* bit to trace parseresult */
-#define DB_MAKEPROG  32             /* bit to trace makeprog */
-#define DB_DEFTYPE   64             /* bit to trace deftype */
-#define DB_SYSCALL  128             /* bit to trace syscall */
-#define DB_MAKEFOR  256             /* bit to trace makefor */
+#define DEBUG           2             /* set bits here for debugging, 0 = off  */
+#define DB_CONS         1             /* bit to trace cons */
+#define DB_BINOP        2             /* bit to trace binop */
+#define DB_MAKEIF       4             /* bit to trace makeif */
+#define DB_MAKEPROGN    8             /* bit to trace makeprogn */
+#define DB_PARSERES     16            /* bit to trace parseresult */
+#define DB_MAKEPROGRAM  32            /* bit to trace makeprog */
+#define DB_FINDTYPE     64            /* bit to trace deftype */
+#define DB_MAKEFUNCALL  128           /* bit to trace syscall */
+#define DB_MAKEFOR      256           /* bit to trace makefor */
+#define DB_COPYTOK      512           /* bit to trace copytok */
 
  int labelnumber = 0;  /* sequential counter for internal label numbers */
 
@@ -204,67 +206,124 @@ TOKEN makeprogn(TOKEN tok, TOKEN statements)
      return tok;
    }
 
-TOKEN makeprog(TOKEN variable, TOKEN params, TOKEN progdesc)
+/* makeprogram makes the tree structures for the top-level program */
+TOKEN makeprogram(TOKEN name, TOKEN args, TOKEN statements) 
   {  
-     TOKEN arguments = talloc();
-     arguments->tokentype = OPERATOR;
-     arguments->whichval = PROGNOP;
-     arguments->operands = params;
-     arguments->link = progdesc;
-     variable->link = arguments;
+     TOKEN parameters = talloc();
+     parameters->tokentype = OPERATOR;
+     parameters->whichval = PROGNOP;
+     parameters->operands = args;
+     parameters->link = statements;
+     name->link = parameters;
      TOKEN tok = talloc();
      tok->tokentype = OPERATOR;
      tok->whichval = PROGNOP;
-     tok->operands = variable;
-     if (DEBUG & DB_MAKEPROG)
+     tok->operands = name;
+     if (DEBUG & DB_MAKEPROGRAM)
        { printf("makeprog\n");
-         dbugprinttok(arguments);
+         dbugprinttok(parameters);
          dbugprinttok(tok);
-         dbugprinttok(variable);
-         dbugprinttok(params);
-         dbugprinttok(progdesc);
+         dbugprinttok(name);
+         dbugprinttok(args);
+         dbugprinttok(statements);
        };
      return tok;
    }
 
-// Uses symbol table class to find variable type
-TOKEN deftype(TOKEN variable)
+/* findtype looks up a type name in the symbol table, puts the pointer
+   to its type into tok->symtype, returns tok. */
+TOKEN findtype(TOKEN variable)
   {  
+     // Uses symbol table class to find variable type
      variable->symtype = searchst(variable->stringval);
-     if (DEBUG & DB_DEFTYPE)
+     if (DEBUG & DB_FINDTYPE)
        { printf("makeprog\n");
          dbugprinttok(variable);
        };
      return variable;
    }
 
-TOKEN syscall(TOKEN variable, TOKEN params)
+/* makefuncall makes a FUNCALL operator and links it to the fn and args.
+   tok is a (now) unused token that is recycled. */
+TOKEN makefuncall(TOKEN tok, TOKEN fn, TOKEN args)
   {  
-     variable->link = params;
-     TOKEN tok = talloc();
+     fn->link = args;
      tok->tokentype = OPERATOR;
      tok->whichval = FUNCALLOP;
-     tok->operands = variable;
-     if (DEBUG & DB_SYSCALL)
+     tok->operands = fn;
+     if (DEBUG & DB_MAKEFUNCALL)
        { printf("makeprog\n");
-         dbugprinttok(variable);
-         dbugprinttok(params);
+         dbugprinttok(fn);
+         dbugprinttok(args);
          dbugprinttok(tok);
        };
+     return tok;
    }
 
-TOKEN makefor(TOKEN assignment, TOKEN variable, TOKEN statement)
+/* copytok makes a new token that is a copy of origtok */
+TOKEN copytok(TOKEN origtok) {
+  TOKEN tok = talloc();
+  tok->tokentype = origtok->tokentype;
+  tok->whichval = origtok->whichval;
+  tok->intval = tok->intval;
+  tok->basicdt = origtok->basicdt;
+  return tok;
+}
+
+/* makefor makes structures for a for statement.
+   sign is 1 for normal loop, -1 for downto.
+   asg is an assignment statement, e.g. (:= i 1)
+   endexpr is the end expression
+   tok, tokb and tokc are (now) unused tokens that are recycled. */
+TOKEN makefor(int sign, TOKEN tok, TOKEN asg, TOKEN tokb, TOKEN endexpr,
+              TOKEN tokc, TOKEN statement)
   {  
-     TOKEN tok = makeprogn(talloc(), assignment);
-     TOKEN lab = talloc();
-     lab->tokentype = OPERATOR;
-     lab->whichval = LABELOP;
-     lab->tokenval = labelnumber;
-     assignment->link = lab;
+     tok = makeprogn(talloc(), asg);
+     //sets label
+     TOKEN label = talloc();
+     label->tokentype = OPERATOR;
+     label->whichval = LABELOP;
+     asg->link = label;
+     //sets num
+     TOKEN num = talloc();
+     num->tokentype = NUMBERTOK;
+     num->basicdt = INTEGER;
+     num->intval = labelnumber;
      labelnumber++;
-     TOKEN condition = talloc();
-     condition = makeif(if, variable, statement, NULL);
-     
+     //less than or equal to operator
+     TOKEN lessequal = talloc();
+     lessequal->tokentype = OPERATOR;
+     lessequal->whichval = LEOP;
+     TOKEN ival1 = copytok(asg->operands->link);
+     ival1->link = endexpr;
+     lessequal->operands = ival1;
+     //sets then
+     TOKEN then = makeprogn(talloc(), statement);
+     //sets if
+     TOKEN if_val = makeif(talloc(), lessequal, then, NULL);
+     label->link = if_val;
+     //sets assignment
+     TOKEN assign = talloc();
+     assign->tokentype = OPERATOR;
+     assign->whichval = ASSIGNOP;
+     //sets increment
+     TOKEN ival2 = copytok(asg->operands->link);
+     TOKEN add = talloc();
+     add->tokentype = OPERATOR;
+     add->whichval = PLUSOP;
+     TOKEN ival3 = copytok(asg->operands->link);
+     // increment value
+     TOKEN one = talloc();
+     one->tokentype = NUMBERTOK;
+     one->basicdt = INTEGER;
+     one->intval = 1;
+     ival3->link = one;
+     assign->operands = ival2;
+     TOKEN goto_val = talloc();
+     goto_val->tokentype = OPERATOR;
+     goto_val->whichval = GOTOOP;
+     TOKEN num2 = copytok(num);
+     goto_val->operands = num2;
      return tok;
    }
 
