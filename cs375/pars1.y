@@ -83,26 +83,36 @@ TOKEN parseresult;
 
 %%
 
-program    :  PROGRAM variable LPAREN params RPAREN SEMICOLON progdesc DOT { parseresult = makeprogram($2, $4, $7); }
+  program    :  PROGRAM variable LPAREN idlist RPAREN SEMICOLON vblock DOT { parseresult = makeprogram($2, $4, $7); }
              ;
-  params     :  variable { $$ = cons($1, NULL); }
-             |  variable COMMA params { $$ = cons($1, $3); } // recursive
+  idlist     :  IDENTIFIER COMMA idlist { $$ = cons($1, $3); }
+             |  IDENTIFIER    { $$ = cons($1, NULL); }
              ;
-  progdesc   :  VAR varlist statement
+  vblock     :  VAR varspecs block       { $$ = $3; }
+             |  block
              ;
-  varlist    :  variable COLON vartype { $$ = cons($1, NULL); }
-             |  variable COMMA varlist { $$ = cons($1, $3); } // recursive
+  varspecs   :  vargroup SEMICOLON varspecs
+             |  vargroup SEMICOLON
              ;
-  vartype    :  variable { $$ = findtype($1); }
+  vargroup   :  idlist COLON type { instvars($1, $3); }
+             ;
+  type       :  simpletype
+             ;
+  simpletype :  IDENTIFIER   { $$ = findtype($1); }
+             ;
+  block      : BEGINBEGIN statement endpart { $$ = makeprogn($1,cons($2, $3)); }
              ;
   statement  :  BEGINBEGIN statement endpart
                                        { $$ = makeprogn($1,cons($2, $3)); }
              |  IF expr THEN statement endif   { $$ = makeif($1, $2, $4, $5); }
              |  assignment
              |  FOR assignment TO factor DO statement { $$ = makefor(1, $1, $2, $3, $4, $5, $6); }
-             |  syscall
+             |  syscall 
              ;
-  syscall    :  variable LPAREN params RPAREN  { $$ = makefuncall($2, $1, $3); }
+  syscall    :  variable LPAREN factorlist RPAREN  { $$ = makefuncall($2, $1, $3); }
+             ;
+  factorlist :  factor COMMA factorlist { $$ = cons($1, $3); }
+             |  factor 
              ;
   endpart    :  SEMICOLON statement endpart    { $$ = cons($2, $3); }
              |  END                            { $$ = NULL; }
@@ -120,8 +130,8 @@ program    :  PROGRAM variable LPAREN params RPAREN SEMICOLON progdesc DOT { par
              ;
   factor     :  LPAREN expr RPAREN             { $$ = $2; }
              |  variable
-             |  NUMBER
              |  STRING
+             |  NUMBER                        
              ;
   variable   : IDENTIFIER
              ;
@@ -137,7 +147,7 @@ program    :  PROGRAM variable LPAREN params RPAREN SEMICOLON progdesc DOT { par
    To turn on all flags, set DEBUG to the next power of 2, minus 1.
   */
 
-#define DEBUG           2             /* set bits here for debugging, 0 = off  */
+#define DEBUG           0             /* set bits here for debugging, 0 = off  */
 #define DB_CONS         1             /* bit to trace cons */
 #define DB_BINOP        2             /* bit to trace binop */
 #define DB_MAKEIF       4             /* bit to trace makeif */
@@ -206,6 +216,37 @@ TOKEN makeprogn(TOKEN tok, TOKEN statements)
      return tok;
    }
 
+/* install variables in symbol table */
+void instvars(TOKEN idlist, TOKEN typetok)
+  {  SYMBOL sym, typesym; int align;
+     typesym = typetok->symtype;
+     align = alignsize(typesym);
+     while ( idlist != NULL )   /* for each id */
+       {  sym = insertsym(idlist->stringval);
+          sym->kind = VARSYM;
+          sym->offset =     /* "next" */
+              wordaddress(blockoffs[blocknumber],
+                          align);
+          sym->size = typesym->size;
+          blockoffs[blocknumber] =   /* "next" */
+                         sym->offset + sym->size;
+          sym->datatype = typesym;
+          sym->basicdt = typesym->basicdt;
+          idlist = idlist->link;
+        };
+  }
+
+TOKEN findid(TOKEN tok) { /* the ID token */
+  SYMBOL sym = searchst(tok->stringval);
+  tok->symentry = sym;
+  SYMBOL typ = sym->datatype;
+  tok->symtype = typ;
+  if ( typ->kind == BASICTYPE ||
+      typ->kind == POINTERSYM)
+      tok->basicdt = typ->basicdt;
+  return tok; 
+}
+
 /* makeprogram makes the tree structures for the top-level program */
 TOKEN makeprogram(TOKEN name, TOKEN args, TOKEN statements) 
   {  
@@ -220,7 +261,7 @@ TOKEN makeprogram(TOKEN name, TOKEN args, TOKEN statements)
      tok->whichval = PROGNOP;
      tok->operands = name;
      if (DEBUG & DB_MAKEPROGRAM)
-       { printf("makeprog\n");
+       { printf("makeprogram\n");
          dbugprinttok(parameters);
          dbugprinttok(tok);
          dbugprinttok(name);
@@ -237,7 +278,7 @@ TOKEN findtype(TOKEN variable)
      // Uses symbol table class to find variable type
      variable->symtype = searchst(variable->stringval);
      if (DEBUG & DB_FINDTYPE)
-       { printf("makeprog\n");
+       { printf("findtype\n");
          dbugprinttok(variable);
        };
      return variable;
@@ -252,7 +293,7 @@ TOKEN makefuncall(TOKEN tok, TOKEN fn, TOKEN args)
      tok->whichval = FUNCALLOP;
      tok->operands = fn;
      if (DEBUG & DB_MAKEFUNCALL)
-       { printf("makeprog\n");
+       { printf("makefuncall\n");
          dbugprinttok(fn);
          dbugprinttok(args);
          dbugprinttok(tok);
@@ -267,6 +308,12 @@ TOKEN copytok(TOKEN origtok) {
   tok->whichval = origtok->whichval;
   tok->intval = tok->intval;
   tok->basicdt = origtok->basicdt;
+  if (DEBUG & DB_COPYTOK)
+    {
+      printf("copytok\n");
+      dbugprinttok(tok);
+      dbugprinttok(origtok);
+    }
   return tok;
 }
 
@@ -289,12 +336,13 @@ TOKEN makefor(int sign, TOKEN tok, TOKEN asg, TOKEN tokb, TOKEN endexpr,
      num->tokentype = NUMBERTOK;
      num->basicdt = INTEGER;
      num->intval = labelnumber;
+     label->operands = num;
      labelnumber++;
      //less than or equal to operator
      TOKEN lessequal = talloc();
      lessequal->tokentype = OPERATOR;
      lessequal->whichval = LEOP;
-     TOKEN ival1 = copytok(asg->operands->link);
+     TOKEN ival1 = copytok(asg->operands);
      ival1->link = endexpr;
      lessequal->operands = ival1;
      //sets then
@@ -306,24 +354,28 @@ TOKEN makefor(int sign, TOKEN tok, TOKEN asg, TOKEN tokb, TOKEN endexpr,
      TOKEN assign = talloc();
      assign->tokentype = OPERATOR;
      assign->whichval = ASSIGNOP;
+     statement->link = assign;
      //sets increment
-     TOKEN ival2 = copytok(asg->operands->link);
+     TOKEN ival2 = copytok(asg->operands);
      TOKEN add = talloc();
      add->tokentype = OPERATOR;
      add->whichval = PLUSOP;
-     TOKEN ival3 = copytok(asg->operands->link);
+     ival2->link = add;
+     TOKEN ival3 = copytok(asg->operands);
      // increment value
      TOKEN one = talloc();
      one->tokentype = NUMBERTOK;
      one->basicdt = INTEGER;
      one->intval = 1;
      ival3->link = one;
+     add->operands = ival3;
      assign->operands = ival2;
      TOKEN goto_val = talloc();
      goto_val->tokentype = OPERATOR;
      goto_val->whichval = GOTOOP;
      TOKEN num2 = copytok(num);
      goto_val->operands = num2;
+     assign->link = goto_val;
      return tok;
    }
 

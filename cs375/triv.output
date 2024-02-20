@@ -1,0 +1,3 @@
+yyparse result =        0
+(progn graph1 (progn output)
+              res 27)
