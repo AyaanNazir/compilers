@@ -258,7 +258,7 @@ TOKEN makeprogram(TOKEN name, TOKEN args, TOKEN statements)
      name->link = parameters;
      TOKEN tok = talloc();
      tok->tokentype = OPERATOR;
-     tok->whichval = PROGNOP;
+     tok->whichval = PROGRAMOP;
      tok->operands = name;
      if (DEBUG & DB_MAKEPROGRAM)
        { printf("makeprogram\n");
