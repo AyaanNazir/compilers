@@ -83,16 +83,22 @@ TOKEN parseresult;
 
 %%
 
-  program    :  PROGRAM variable LPAREN idlist RPAREN SEMICOLON vblock DOT { parseresult = makeprogram($2, $4, $7); }
+  program    :  PROGRAM IDENTIFIER LPAREN idlist RPAREN SEMICOLON cblock DOT { parseresult = makeprogram($2, $4, $7); }
              ;
   idlist     :  IDENTIFIER COMMA idlist { $$ = cons($1, $3); }
              |  IDENTIFIER    { $$ = cons($1, NULL); }
              ;
+  cblock     :  CONST clist vblock {$$ = $3;}
+             |  vblock 
+             ;
+  clist      :  IDENTIFIER EQ factor SEMICOLON clist {instconst($1, $3); }
+             |  IDENTIFIER EQ factor SEMICOLON {instconst($1, $3);} 
+             ;
   vblock     :  VAR varspecs block       { $$ = $3; }
              |  block
              ;
-  varspecs   :  vargroup SEMICOLON varspecs
-             |  vargroup SEMICOLON
+  varspecs   :  vargroup SEMICOLON varspecs 
+             |  vargroup SEMICOLON 
              ;
   vargroup   :  idlist COLON type { instvars($1, $3); }
              ;
@@ -100,19 +106,25 @@ TOKEN parseresult;
              ;
   simpletype :  IDENTIFIER   { $$ = findtype($1); }
              ;
-  block      : BEGINBEGIN statement endpart { $$ = makeprogn($1,cons($2, $3)); }
+  block      :  BEGINBEGIN statement endpart { $$ = makeprogn($1,cons($2, $3)); }
              ;
   statement  :  BEGINBEGIN statement endpart
                                        { $$ = makeprogn($1,cons($2, $3)); }
              |  IF expr THEN statement endif   { $$ = makeif($1, $2, $4, $5); }
-             |  assignment
+             |  assignment 
              |  FOR assignment TO factor DO statement { $$ = makefor(1, $1, $2, $3, $4, $5, $6); }
              |  syscall 
+             |  REPEAT s_list UNTIL compare { $$ = makerepeat($1, $2, $3, $4); } 
              ;
-  syscall    :  variable LPAREN factorlist RPAREN  { $$ = makefuncall($2, $1, $3); }
+  s_list     :  statement SEMICOLON s_list { $$ = cons($1, $3); }
+             |  statement
              ;
-  factorlist :  factor COMMA factorlist { $$ = cons($1, $3); }
-             |  factor 
+  compare    :  variable EQ term {$$ = binop($2, $1, $3);}
+             ;
+  syscall    :  IDENTIFIER LPAREN factorlist RPAREN  { $$ = makefuncall($2, $1, $3); } 
+             ;
+  factorlist :  expr COMMA factorlist { $$ = cons($1, $3); }
+             |  expr 
              ;
   endpart    :  SEMICOLON statement endpart    { $$ = cons($2, $3); }
              |  END                            { $$ = NULL; }
@@ -120,20 +132,23 @@ TOKEN parseresult;
   endif      :  ELSE statement                 { $$ = $2; }
              |  /* empty */                    { $$ = NULL; }  %prec thenthen
              ;
-  assignment :  variable ASSIGN expr           { $$ = binop($2, $1, $3); }
+  assignment :  variable ASSIGN expr          { $$ = binop($2, $1, $3); } 
              ;
-  expr       :  expr PLUS term                 { $$ = binop($2, $1, $3); }
-             |  term 
+  expr       :  expr PLUS term                 { $$ = binop($2, $1, $3); } 
+             |  term
+             |  MINUS term  { $$ = unaryop($1, $2); }
+             |  expr MINUS term  { $$ = binop($2, $1, $3); } 
              ;
-  term       :  term TIMES factor              { $$ = binop($2, $1, $3); }
-             |  factor
+  term       :  term TIMES factor              { $$ = binop($2, $1, $3); } 
+             |  factor                         
              ;
   factor     :  LPAREN expr RPAREN             { $$ = $2; }
-             |  variable
+             |  variable 
              |  STRING
-             |  NUMBER                        
+             |  NUMBER          
+             |  syscall 
              ;
-  variable   : IDENTIFIER
+  variable   : IDENTIFIER { $$ = findid($1); }
              ;
 %%
 
@@ -175,9 +190,51 @@ TOKEN cons(TOKEN item, TOKEN list)           /* add item to front of list */
   }
 
 TOKEN binop(TOKEN op, TOKEN lhs, TOKEN rhs)        /* reduce binary operator */
-  { op->operands = lhs;          /* link operands to operator       */
+  { 
+    op->operands = lhs;          /* link operands to operator       */
     lhs->link = rhs;             /* link second operand to first    */
     rhs->link = NULL;            /* terminate operand list          */
+    if (lhs->basicdt == REAL && rhs->basicdt == REAL) {
+      op->basicdt = REAL;
+    } else if (lhs->basicdt == REAL && rhs->basicdt == INTEGER) {
+      op->basicdt = REAL;
+      if (rhs->tokentype == NUMBERTOK) {
+        rhs->basicdt = REAL;
+        rhs->realval = (double) rhs->intval;
+      } else {
+        TOKEN flt = talloc();
+        flt->tokentype = OPERATOR;
+        flt->whichval = FLOATOP;
+        flt->operands = rhs;
+        lhs->link = flt;
+      }
+    } else if (lhs->basicdt == INTEGER && rhs->basicdt == REAL) {
+      if (op->whichval != ASSIGNOP) {
+        op->basicdt = REAL;
+        if (lhs->tokentype == NUMBERTOK) {
+          lhs->basicdt = REAL;
+          lhs->realval = (double) lhs->intval;
+        } else {
+          TOKEN flt = talloc();
+          flt->tokentype = OPERATOR;
+          flt->whichval = FLOATOP;
+          flt->operands = lhs;
+          flt->link = rhs;
+        }
+      } else {
+        op->basicdt = INTEGER;
+        if (rhs->tokentype == NUMBERTOK) {
+          rhs->basicdt = INTEGER;
+          rhs->intval = (int) rhs->realval;
+        } else {
+          TOKEN flt = talloc();
+          flt->tokentype = OPERATOR;
+          flt->whichval = FIXOP;
+          flt->operands = rhs;
+          lhs->link = flt;
+        }
+      }
+    }
     if (DEBUG & DB_BINOP)
        { printf("binop\n");
          dbugprinttok(op);
@@ -239,6 +296,16 @@ void instvars(TOKEN idlist, TOKEN typetok)
 TOKEN findid(TOKEN tok) { /* the ID token */
   SYMBOL sym = searchst(tok->stringval);
   tok->symentry = sym;
+  if (sym->kind == CONSTSYM) {
+    tok->tokentype = NUMBERTOK;
+    tok->basicdt = sym->basicdt;
+    if (sym->basicdt == INTEGER) {
+      tok->intval = sym->constval.intnum;
+    } else if (sym->basicdt == REAL) {
+      tok->realval = sym->constval.realnum;
+    }
+    return tok;
+  }
   SYMBOL typ = sym->datatype;
   tok->symtype = typ;
   if ( typ->kind == BASICTYPE ||
@@ -292,6 +359,10 @@ TOKEN makefuncall(TOKEN tok, TOKEN fn, TOKEN args)
      tok->tokentype = OPERATOR;
      tok->whichval = FUNCALLOP;
      tok->operands = fn;
+     SYMBOL sym = searchst(fn->stringval);
+     tok->symentry = sym;
+     tok->symtype = sym->datatype;
+     tok->basicdt = sym->datatype->basicdt;
      if (DEBUG & DB_MAKEFUNCALL)
        { printf("makefuncall\n");
          dbugprinttok(fn);
@@ -378,6 +449,54 @@ TOKEN makefor(int sign, TOKEN tok, TOKEN asg, TOKEN tokb, TOKEN endexpr,
      assign->link = goto_val;
      return tok;
    }
+
+/* instconst installs a constant in the symbol table */
+void instconst(TOKEN idtok, TOKEN consttok) {
+  SYMBOL symbol = insertsym(idtok->stringval);
+  symbol->basicdt = consttok->basicdt;
+  symbol->kind = CONSTSYM;
+  if (consttok->basicdt == REAL) {
+    symbol->constval.realnum = consttok->realval;
+  } else if (consttok->basicdt == INTEGER) {
+    symbol->constval.intnum = consttok->intval;
+  }
+}
+
+/* unaryop links a unary operator op to one operand, lhs */
+TOKEN unaryop(TOKEN op, TOKEN lhs) {
+  op->operands = lhs;
+  return op;
+}
+
+/* makerepeat makes structures for a repeat statement.
+   tok and tokb are (now) unused tokens that are recycled. */
+TOKEN makerepeat(TOKEN tok, TOKEN statements, TOKEN tokb, TOKEN expr) {
+  // sets label
+  TOKEN label = talloc();
+  label->tokentype = OPERATOR;
+  label->whichval = LABELOP;
+  TOKEN num = talloc();
+  num->tokentype = NUMBERTOK;
+  num->basicdt = INTEGER;
+  num->intval = labelnumber;
+  label->operands = num;
+  tok = makeprogn(tok, label);
+  // makes body
+  tokb = makeprogn(tokb, statements);
+  label->link = tokb;
+  // makes goto
+  TOKEN goto_val = talloc();
+  goto_val->tokentype = OPERATOR;
+  goto_val->whichval = GOTOOP;
+  goto_val->operands = num;
+  TOKEN nul = makeprogn(talloc(), NULL);
+  nul->link = goto_val;
+  // makes if
+  TOKEN if_val = makeif(talloc(), expr, nul, goto_val);
+  tokb->link = if_val;
+  labelnumber++;
+  return tok;
+}
 
 int wordaddress(int n, int wordsize)
   { return ((n + wordsize - 1) / wordsize) * wordsize; }
