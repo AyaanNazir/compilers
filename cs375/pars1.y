@@ -83,13 +83,28 @@ TOKEN parseresult;
 
 %%
 
-  program    :  PROGRAM IDENTIFIER LPAREN idlist RPAREN SEMICOLON cblock DOT { parseresult = makeprogram($2, $4, $7); }
+  program    :  PROGRAM IDENTIFIER LPAREN idlist RPAREN SEMICOLON lblock DOT { parseresult = makeprogram($2, $4, $7); }
+             ;
+  lblock     :  LABEL llist SEMICOLON cblock { $$ = $4; }
+             |  cblock 
+             ;
+  llist      :  NUMBER COMMA llist 
+             |  NUMBER
+             ;
+  tblock     :  TYPE tlist vblock { $$ = $3; }
+             |  vblock 
+             ;
+  tlist      :  IDENTIFIER EQ type SEMICOLON tlist 
+             |  IDENTIFIER EQ type SEMICOLON 
+             ;
+  flist      :  idlist COLON type SEMICOLON flist 
+             |  idlist COLON type 
              ;
   idlist     :  IDENTIFIER COMMA idlist { $$ = cons($1, $3); }
              |  IDENTIFIER    { $$ = cons($1, NULL); }
              ;
-  cblock     :  CONST clist vblock {$$ = $3;}
-             |  vblock 
+  cblock     :  CONST clist tblock {$$ = $3;}
+             |  tblock 
              ;
   clist      :  IDENTIFIER EQ factor SEMICOLON clist {instconst($1, $3); }
              |  IDENTIFIER EQ factor SEMICOLON {instconst($1, $3);} 
@@ -102,9 +117,17 @@ TOKEN parseresult;
              ;
   vargroup   :  idlist COLON type { instvars($1, $3); }
              ;
-  type       :  simpletype
+  type       :  simpletype 
+             |  POINT IDENTIFIER 
+             |  RECORD flist END 
+             |  ARRAY LBRACKET arr RBRACKET OF type
+             ;
+  arr        :  simpletype COMMA arr { $$ = cons($1, $3); }
+             |  simpletype { $$ = cons($1, NULL); }
              ;
   simpletype :  IDENTIFIER   { $$ = findtype($1); }
+             |  expr DOTDOT expr 
+             |  LPAREN idlist RPAREN 
              ;
   block      :  BEGINBEGIN statement endpart { $$ = makeprogn($1,cons($2, $3)); }
              ;
@@ -115,6 +138,10 @@ TOKEN parseresult;
              |  FOR assignment TO factor DO statement { $$ = makefor(1, $1, $2, $3, $4, $5, $6); }
              |  syscall 
              |  REPEAT s_list UNTIL compare { $$ = makerepeat($1, $2, $3, $4); } 
+             |  label
+             |  WHILE expr DO statement
+             ;
+  label      :  NUMBER COLON statement 
              ;
   s_list     :  statement SEMICOLON s_list { $$ = cons($1, $3); }
              |  statement
@@ -149,6 +176,8 @@ TOKEN parseresult;
              |  syscall 
              ;
   variable   : IDENTIFIER { $$ = findid($1); }
+             | variable POINT DOT IDENTIFIER 
+             | variable LBRACKET factorlist RBRACKET 
              ;
 %%
 
@@ -162,7 +191,7 @@ TOKEN parseresult;
    To turn on all flags, set DEBUG to the next power of 2, minus 1.
   */
 
-#define DEBUG           0             /* set bits here for debugging, 0 = off  */
+#define DEBUG           64             /* set bits here for debugging, 0 = off  */
 #define DB_CONS         1             /* bit to trace cons */
 #define DB_BINOP        2             /* bit to trace binop */
 #define DB_MAKEIF       4             /* bit to trace makeif */
@@ -180,13 +209,16 @@ TOKEN parseresult;
        printouts in your routines similar to those that are shown here.     */
 
 TOKEN cons(TOKEN item, TOKEN list)           /* add item to front of list */
-  { item->link = list;
+  { 
+    
+    item->link = list;
     if (DEBUG & DB_CONS)
        { printf("cons\n");
          dbugprinttok(item);
          dbugprinttok(list);
        };
     return item;
+    
   }
 
 TOKEN binop(TOKEN op, TOKEN lhs, TOKEN rhs)        /* reduce binary operator */
@@ -276,7 +308,9 @@ TOKEN makeprogn(TOKEN tok, TOKEN statements)
 /* install variables in symbol table */
 void instvars(TOKEN idlist, TOKEN typetok)
   {  SYMBOL sym, typesym; int align;
-     typesym = typetok->symtype;
+     if (typetok->symtype) {
+      typesym = typetok->symtype;
+     }
      align = alignsize(typesym);
      while ( idlist != NULL )   /* for each id */
        {  sym = insertsym(idlist->stringval);
@@ -294,6 +328,8 @@ void instvars(TOKEN idlist, TOKEN typetok)
   }
 
 TOKEN findid(TOKEN tok) { /* the ID token */
+
+  
   SYMBOL sym = searchst(tok->stringval);
   tok->symentry = sym;
   if (sym->kind == CONSTSYM) {
@@ -306,11 +342,14 @@ TOKEN findid(TOKEN tok) { /* the ID token */
     }
     return tok;
   }
+  
   SYMBOL typ = sym->datatype;
   tok->symtype = typ;
-  if ( typ->kind == BASICTYPE ||
-      typ->kind == POINTERSYM)
+  if ( typ && (typ->kind == BASICTYPE ||
+      typ->kind == POINTERSYM)) {
+      
       tok->basicdt = typ->basicdt;
+      }
   return tok; 
 }
 
@@ -344,6 +383,9 @@ TOKEN findtype(TOKEN variable)
   {  
      // Uses symbol table class to find variable type
      variable->symtype = searchst(variable->stringval);
+     if (variable->symtype && variable->symtype->kind == TYPESYM) {
+      variable->symtype = variable->symtype->datatype;
+     }
      if (DEBUG & DB_FINDTYPE)
        { printf("findtype\n");
          dbugprinttok(variable);
