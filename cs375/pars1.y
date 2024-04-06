@@ -88,28 +88,32 @@ TOKEN parseresult;
   lblock     :  LABEL llist SEMICOLON cblock { $$ = $4; }
              |  cblock 
              ;
-  llist      :  NUMBER COMMA llist 
-             |  NUMBER
+  llist      :  NUMBER COMMA llist { instlabel($1); }
+             |  NUMBER { instlabel($1); }
              ;
   tblock     :  TYPE tlist vblock { $$ = $3; }
              |  vblock 
              ;
-  tlist      :  IDENTIFIER EQ type SEMICOLON tlist 
-             |  IDENTIFIER EQ type SEMICOLON 
+  tlist      :  typegroup SEMICOLON tlist 
+             |  typegroup SEMICOLON 
              ;
-  flist      :  idlist COLON type SEMICOLON flist 
-             |  idlist COLON type 
+  typegroup  :  IDENTIFIER EQ type { insttype($1, $3); }
+             ;
+  flist      :  field SEMICOLON flist { $$ = nconc($1, $3); }
+             |  field 
+             ;
+  field      :  idlist COLON type { $$ = instfields($1, $3); }
              ;
   idlist     :  IDENTIFIER COMMA idlist { $$ = cons($1, $3); }
-             |  IDENTIFIER    { $$ = cons($1, NULL); }
+             |  IDENTIFIER  { $$ = cons($1, NULL); }
              ;
   cblock     :  CONST clist tblock {$$ = $3;}
              |  tblock 
              ;
   clist      :  IDENTIFIER EQ factor SEMICOLON clist {instconst($1, $3); }
-             |  IDENTIFIER EQ factor SEMICOLON {instconst($1, $3);} 
+             |  IDENTIFIER EQ factor SEMICOLON {instconst($1, $3); } 
              ;
-  vblock     :  VAR varspecs block       { $$ = $3; }
+  vblock     :  VAR varspecs block      { $$ = $3; }
              |  block
              ;
   varspecs   :  vargroup SEMICOLON varspecs 
@@ -118,55 +122,57 @@ TOKEN parseresult;
   vargroup   :  idlist COLON type { instvars($1, $3); }
              ;
   type       :  simpletype 
-             |  POINT IDENTIFIER 
-             |  RECORD flist END 
-             |  ARRAY LBRACKET arr RBRACKET OF type
+             |  POINT IDENTIFIER  { $$ = instpoint($1, $2); }
+             |  RECORD flist END  { $$ = instrec($1, $2); }
+             |  ARRAY LBRACKET arr RBRACKET OF type  { $$ = instarray($3, $6); }
              ;
   arr        :  simpletype COMMA arr { $$ = cons($1, $3); }
              |  simpletype { $$ = cons($1, NULL); }
              ;
-  simpletype :  IDENTIFIER   { $$ = findtype($1); }
-             |  expr DOTDOT expr 
-             |  LPAREN idlist RPAREN 
+  simpletype :  IDENTIFIER    { $$ = findtype($1); }
+             |  expr DOTDOT expr { $$ = instdotdot($1, $2, $3);}
+             |  LPAREN idlist RPAREN { $$ = instenum($2); }
              ;
   block      :  BEGINBEGIN statement endpart { $$ = makeprogn($1,cons($2, $3)); }
              ;
-  statement  :  BEGINBEGIN statement endpart
-                                       { $$ = makeprogn($1,cons($2, $3)); }
+  statement  :  BEGINBEGIN statement endpart { $$ = makeprogn($1,cons($2, $3)); }
              |  IF expr THEN statement endif   { $$ = makeif($1, $2, $4, $5); }
              |  assignment 
              |  FOR assignment TO factor DO statement { $$ = makefor(1, $1, $2, $3, $4, $5, $6); }
              |  syscall 
              |  REPEAT s_list UNTIL compare { $$ = makerepeat($1, $2, $3, $4); } 
              |  label
-             |  WHILE expr DO statement
+             |  WHILE expr DO statement { $$ = makewhile($1, $2, $3, $4); }
+             |  GOTO NUMBER { $$ = dogoto($1, $2); }
              ;
-  label      :  NUMBER COLON statement 
+  label      :  NUMBER COLON statement { $$ = dolabel($1, $2, $3); }
              ;
   s_list     :  statement SEMICOLON s_list { $$ = cons($1, $3); }
-             |  statement
+             |  statement { $$ = cons($1, NULL); }
              ;
   compare    :  variable EQ term {$$ = binop($2, $1, $3);}
              ;
   syscall    :  IDENTIFIER LPAREN factorlist RPAREN  { $$ = makefuncall($2, $1, $3); } 
              ;
   factorlist :  expr COMMA factorlist { $$ = cons($1, $3); }
-             |  expr 
+             |  expr { $$ = cons($1, NULL); }
              ;
   endpart    :  SEMICOLON statement endpart    { $$ = cons($2, $3); }
-             |  END                            { $$ = NULL; }
+             |  END                   { $$ = NULL; }
              ;
-  endif      :  ELSE statement                 { $$ = $2; }
-             |  /* empty */                    { $$ = NULL; }  %prec thenthen
+  endif      :  ELSE statement        { $$ = $2; }         
+             |  /* empty */                  { $$ = NULL; }  %prec thenthen  
              ;
-  assignment :  variable ASSIGN expr          { $$ = binop($2, $1, $3); } 
+  assignment :  variable ASSIGN expr     { $$ = binop($2, $1, $3); } 
              ;
   expr       :  expr PLUS term                 { $$ = binop($2, $1, $3); } 
              |  term
              |  MINUS term  { $$ = unaryop($1, $2); }
              |  expr MINUS term  { $$ = binop($2, $1, $3); } 
+             |  expr NE term 
+             |  expr LT term
              ;
-  term       :  term TIMES factor              { $$ = binop($2, $1, $3); } 
+  term       :  term TIMES factor             { $$ = binop($2, $1, $3); } 
              |  factor                         
              ;
   factor     :  LPAREN expr RPAREN             { $$ = $2; }
@@ -174,10 +180,12 @@ TOKEN parseresult;
              |  STRING
              |  NUMBER          
              |  syscall 
+             |  NIL
              ;
   variable   : IDENTIFIER { $$ = findid($1); }
-             | variable POINT DOT IDENTIFIER 
-             | variable LBRACKET factorlist RBRACKET 
+             | variable POINT { $$ = dopoint($1, $2); } 
+             | variable DOT IDENTIFIER { $$ = reducedot($1, $2, $3); }
+             | variable LBRACKET factorlist RBRACKET { $$ = arrayref($1, $2, $3, $4); }
              ;
 %%
 
@@ -191,7 +199,7 @@ TOKEN parseresult;
    To turn on all flags, set DEBUG to the next power of 2, minus 1.
   */
 
-#define DEBUG           64             /* set bits here for debugging, 0 = off  */
+#define DEBUG           0             /* set bits here for debugging, 0 = off  */
 #define DB_CONS         1             /* bit to trace cons */
 #define DB_BINOP        2             /* bit to trace binop */
 #define DB_MAKEIF       4             /* bit to trace makeif */
@@ -204,9 +212,19 @@ TOKEN parseresult;
 #define DB_COPYTOK      512           /* bit to trace copytok */
 
  int labelnumber = 0;  /* sequential counter for internal label numbers */
+ int labellist[2048];
 
    /*  Note: you should add to the above values and insert debugging
        printouts in your routines similar to those that are shown here.     */
+
+/* makenum makes a new integer number token with num as its value */
+TOKEN makenum(int num) {
+  TOKEN integer = talloc();
+  integer->basicdt = INTEGER;
+  integer->intval = num;
+  integer->tokentype = NUMBERTOK;
+  return integer;
+}
 
 TOKEN cons(TOKEN item, TOKEN list)           /* add item to front of list */
   { 
@@ -223,6 +241,9 @@ TOKEN cons(TOKEN item, TOKEN list)           /* add item to front of list */
 
 TOKEN binop(TOKEN op, TOKEN lhs, TOKEN rhs)        /* reduce binary operator */
   { 
+    if (rhs->whichval == (NIL - RESERVED_BIAS)) {
+      rhs = makenum(0);
+    }
     op->operands = lhs;          /* link operands to operator       */
     lhs->link = rhs;             /* link second operand to first    */
     rhs->link = NULL;            /* terminate operand list          */
@@ -397,6 +418,19 @@ TOKEN findtype(TOKEN variable)
    tok is a (now) unused token that is recycled. */
 TOKEN makefuncall(TOKEN tok, TOKEN fn, TOKEN args)
   {  
+     if (strcmp(fn->stringval, "new") == 0) {
+      tok = talloc();
+      tok->tokentype = OPERATOR;
+      tok->whichval = ASSIGNOP;
+      tok->operands = args;
+      TOKEN method = talloc();
+      method->tokentype = OPERATOR;
+      method->whichval = FUNCALLOP;
+      method->operands = fn;
+      fn->link = makenum(args->symtype->basicdt);
+      args->link = method;
+      return tok;
+     }
      fn->link = args;
      tok->tokentype = OPERATOR;
      tok->whichval = FUNCALLOP;
@@ -419,8 +453,9 @@ TOKEN copytok(TOKEN origtok) {
   TOKEN tok = talloc();
   tok->tokentype = origtok->tokentype;
   tok->whichval = origtok->whichval;
-  tok->intval = tok->intval;
+  tok->intval = origtok->intval;
   tok->basicdt = origtok->basicdt;
+  tok->link = origtok->link;
   if (DEBUG & DB_COPYTOK)
     {
       printf("copytok\n");
@@ -538,6 +573,277 @@ TOKEN makerepeat(TOKEN tok, TOKEN statements, TOKEN tokb, TOKEN expr) {
   tokb->link = if_val;
   labelnumber++;
   return tok;
+}
+
+/* nconc concatenates two token lists, destructively, by making the last link
+   of lista point to listb.
+   (nconc '(a b) '(c d e))  =  (a b c d e)  */
+/* nconc is useful for putting together two fieldlist groups to
+   make them into a single list in a record declaration. */
+/* nconc should return lista, or listb if lista is NULL. */
+TOKEN nconc(TOKEN lista, TOKEN listb) {
+  TOKEN con = lista;
+  while (con->link) {
+    con = con->link;
+  }
+  con->link = listb;
+  return con;
+}
+
+/* makearef makes an array reference operation.
+   off is be an integer constant token
+   tok (if not NULL) is a (now) unused token that is recycled. */
+TOKEN makearef(TOKEN var, TOKEN off, TOKEN tok) {
+  TOKEN ref = talloc();
+  ref->tokentype = OPERATOR;
+  ref->whichval = AREFOP;
+  ref->operands = var;
+  ref->symentry = var->symentry;
+  var->link = off;
+  return ref;
+}
+
+/* makewhile makes structures for a while statement.
+   tok and tokb are (now) unused tokens that are recycled. */
+TOKEN makewhile(TOKEN tok, TOKEN expr, TOKEN tokb, TOKEN statement) {
+  // sets label
+  TOKEN label = talloc();
+  label->tokentype = OPERATOR;
+  label->whichval = LABELOP;
+  TOKEN num = talloc();
+  num->tokentype = NUMBERTOK;
+  num->basicdt = INTEGER;
+  num->intval = labelnumber;
+  label->operands = num;
+  tok = makeprogn(tok, label);
+  TOKEN body = makeprogn(tokb, statement);
+  // makes goto
+  TOKEN goto_val = talloc();
+  goto_val->tokentype = OPERATOR;
+  goto_val->whichval = GOTOOP;
+  goto_val->operands = num;
+  TOKEN nul = makeprogn(talloc(), NULL);
+  nul->link = goto_val;
+  // makes if
+  TOKEN if_val = makeif(talloc(), expr, nul, goto_val);
+  tokb->link = if_val;
+  labelnumber++;
+  return tok;
+}
+
+/* makesubrange makes a SUBRANGE symbol table entry, puts the pointer to it
+   into tok, and returns tok. */
+TOKEN makesubrange(TOKEN tok, int low, int high) {
+  tok->symtype = symalloc();
+  tok->symtype->basicdt = INTEGER;
+  tok->symtype->lowbound = low;
+  tok->symtype->highbound = high;
+  tok->symtype->kind = SUBRANGE;
+  tok->symtype->size = basicsizes[INTEGER];
+  return tok;
+}
+
+/* reducedot handles a record reference.
+   dot is a (now) unused token that is recycled. */
+TOKEN reducedot(TOKEN var, TOKEN dot, TOKEN field) {
+  SYMBOL temp = var->symtype;
+  int count = 0;
+  int off = 0;
+  while (temp) {
+    if (strcmp(temp->namestring, field->stringval) == 0) {
+      var->symentry = temp;
+      off = temp->offset;
+      break;
+    }
+    temp = temp->link;
+  }
+  dot = makearef(var, makenum(off), dot);
+  return dot;
+}
+
+/* arrayref processes an array reference a[i]
+   subs is a list of subscript expressions.
+   tok and tokb are (now) unused tokens that are recycled. */
+TOKEN arrayref(TOKEN arr, TOKEN tok, TOKEN subs, TOKEN tokb) {
+  TOKEN size = makenum(arr->symtype->size / (arr->symtype->lowbound + arr->symtype->highbound - 1));
+  if (subs->link) {
+    TOKEN temp = copytok(subs);
+    size->link = temp;
+    temp->link = NULL;
+  } else {
+    size->link = subs;
+  }
+  TOKEN time = talloc();
+  time->tokentype = OPERATOR;
+  time->whichval = TIMESOP;
+  time->operands = size;
+  TOKEN neg = makenum(size->intval * -1);
+  neg->link = time;
+  TOKEN pos = talloc();
+  pos->tokentype = OPERATOR;
+  pos->whichval = PLUSOP;
+  pos->operands = neg;
+  TOKEN sub = makearef(arr, pos, tokb);
+  if (subs->link) {
+    sub->symtype = arr->symtype->datatype;
+    return arrayref(sub, tok, subs->link, tokb);
+  }
+  return sub;
+}
+
+/* dolabel is the action for a label of the form   <number>: <statement>
+   tok is a (now) unused token that is recycled. */
+TOKEN dolabel(TOKEN labeltok, TOKEN tok, TOKEN statement) {
+  int label = -1;
+  for (int i = 0; i < labelnumber; i++) {
+    if (labellist[i] == labeltok->intval) {
+      label = i;
+      break;
+    }
+  }
+  TOKEN lab = talloc();
+  lab->tokentype = OPERATOR;
+  lab->whichval = LABELOP;
+  lab->operands = makenum(label);
+  lab->link = statement;
+  tok = makeprogn(tok, lab);
+  return tok;
+}
+
+/* dogoto is the action for a goto statement.
+   tok is a (now) unused token that is recycled. */
+TOKEN dogoto(TOKEN tok, TOKEN labeltok) {
+  int label = -1;
+  for (int i = 0; i < labelnumber; i++) {
+    if (labellist[i] == labeltok->intval) {
+      label = i;
+      break;
+    }
+  }
+  tok = talloc();
+  tok->tokentype = OPERATOR;
+  tok->whichval = GOTOOP;
+  tok->operands = makenum(label);
+  return tok;
+}
+
+/* dopoint handles a ^ operator.  john^ becomes (^ john) with type record
+   tok is a (now) unused token that is recycled. */
+TOKEN dopoint(TOKEN var, TOKEN tok) {
+  tok->symtype = var->symtype;
+  tok->tokentype = OPERATOR;
+  tok->whichval = POINTEROP;
+  tok->operands = var;
+  var->link = NULL;
+  return tok;
+}
+
+/* instlabel installs a user label into the label table */
+void  instlabel (TOKEN num) {
+  labellist[labelnumber] = num->intval;
+  labelnumber++;
+}
+
+/* instenum installs an enumerated subrange in the symbol table,
+   e.g., type color = (red, white, blue)
+   by calling makesubrange and returning the token it returns. */
+TOKEN instenum(TOKEN idlist) {
+  TOKEN temp = copytok(idlist);
+  int count = 0;
+  while(temp) {
+    instconst(temp, makenum(count));
+    temp = temp->link;
+    count++;
+  }
+  TOKEN sub = makesubrange(idlist, 0, count-1);
+  return sub;
+}
+
+/* instdotdot installs a .. subrange in the symbol table.
+   dottok is a (now) unused token that is recycled. */
+TOKEN instdotdot(TOKEN lowtok, TOKEN dottok, TOKEN hightok) {
+  return makesubrange(dottok, lowtok->intval, hightok->intval);
+}
+
+/* instarray installs an array declaration into the symbol table.
+   bounds points to a SUBRANGE symbol table entry.
+   The symbol table pointer is returned in token typetok. */
+TOKEN instarray(TOKEN bounds, TOKEN typetok) {
+  if (bounds->link) {
+    typetok = instarray(bounds->link, typetok);
+  }
+  SYMBOL array = symalloc();
+  array->datatype = typetok->symtype;
+  array->lowbound = bounds->symtype->lowbound;
+  array->highbound = bounds->symtype->highbound;
+  array->kind = ARRAYSYM;
+  array->size = typetok->symtype->size * (bounds->symtype->lowbound + bounds->symtype->highbound - 1);
+  typetok->symtype = array;
+  return typetok;
+}
+
+/* instfields will install type in a list idlist of field name tokens:
+   re, im: real    put the pointer to REAL in the RE, IM tokens.
+   typetok is a token whose symtype is a symbol table pointer.
+   Note that nconc() can be used to combine these lists after instrec() */
+TOKEN instfields(TOKEN idlist, TOKEN typetok) {
+  TOKEN temp = idlist;
+  while(temp) {
+    temp->symtype = typetok->symtype;
+    temp = temp->link;
+  }
+  return idlist;
+}
+
+/* instrec will install a record definition.  Each token in the linked list
+   argstok has a pointer its type.  rectok is just a trash token to be
+   used to return the result in its symtype */
+TOKEN instrec(TOKEN rectok, TOKEN argstok) {
+  int count = 0;
+  int first = 1;
+  SYMBOL sym = symalloc(), prev = NULL;
+  while (argstok) {
+    SYMBOL rec = makesym(argstok->stringval);
+    rec->offset = (count + alignsize(argstok->symtype) - 1) / alignsize(argstok->symtype) * alignsize(argstok->symtype);
+    rec->datatype = argstok->symtype;
+    rec->size = argstok->symtype->size;
+    count = rec->size + rec->offset;
+    if (first) {
+      first = 0;
+      sym->datatype = rec;
+      prev = rec;
+    } else {
+      prev->link = rec;
+      prev = rec;
+    }
+    rec->link = NULL;
+    argstok = argstok->link;
+  }
+  sym->kind = RECORDSYM;
+  sym->size = (count + 16 - 1) / 16 * 16;
+  rectok->symtype = sym;
+  
+  return rectok;
+}
+
+/* instpoint will install a pointer type in symbol table */
+TOKEN instpoint(TOKEN tok, TOKEN typename) {
+  SYMBOL point = symalloc();
+  point->kind = POINTERSYM;
+  point->basicdt = POINTER;
+  point->size = basicsizes[POINTER];
+  tok->symtype = point;
+  return tok;
+}
+
+/* insttype will install a type name in symbol table.
+   typetok is a token containing symbol table pointers. */
+void  insttype(TOKEN typename, TOKEN typetok) {
+  SYMBOL type = searchins(typename->stringval);
+  type->datatype = typetok->symtype;
+  alignsize(typetok->symtype);
+  type->kind = TYPESYM;
+  type->size = typetok->symtype->size;
 }
 
 int wordaddress(int n, int wordsize)
